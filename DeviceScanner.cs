@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
@@ -14,11 +15,21 @@ namespace ConnTracer.Services.Network
 {
     public class DeviceScanner
     {
-        private readonly Dictionary<string, string> ouiDatabase;
+        private Dictionary<string, string> ouiDatabase;
 
         public DeviceScanner()
         {
-            ouiDatabase = LoadOuiDatabase();
+            // Lokale Datei bevorzugen
+            var path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources", "oui.txt");
+            if (System.IO.File.Exists(path))
+                System.Diagnostics.Debug.WriteLine("OUI-Datei gefunden!");
+            else
+                System.Diagnostics.Debug.WriteLine("OUI-Datei NICHT gefunden!");
+
+            if (System.IO.File.Exists(path))
+                ouiDatabase = LoadOuiDatabaseFromFile(path);
+            else
+                ouiDatabase = LoadOuiDatabase(); // Fallback auf kleine Liste
         }
 
         public async Task<List<DeviceInfo>> ScanLocalNetworkAsync(string subnet)
@@ -117,7 +128,44 @@ namespace ConnTracer.Services.Network
                 { "00-50-56", "VMware, Inc." },
                 { "00-15-5D", "Microsoft Corporation" },
                 { "F4-5C-89", "Intel Corporate" },
+                { "00-1C-B3", "Samsung Electronics" },
+                { "00-21-6A", "Hewlett Packard" },
+                { "00-24-E8", "Hon Hai Precision Ind. Co.,Ltd." },
             };
+        }
+
+        private async Task<Dictionary<string, string>> DownloadOuiDatabaseAsync()
+        {
+            var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            using var client = new HttpClient();
+            var content = await client.GetStringAsync("https://standards-oui.ieee.org/oui/oui.txt");
+            var regex = new Regex(@"^(?<prefix>[0-9A-F]{6})\s+\(base 16\)\s+(?<vendor>.+)$", RegexOptions.Multiline);
+
+            foreach (Match match in regex.Matches(content))
+            {
+                string prefix = match.Groups["prefix"].Value.ToUpper();
+                // Format zu XX-XX-XX
+                prefix = $"{prefix.Substring(0,2)}-{prefix.Substring(2,2)}-{prefix.Substring(4,2)}";
+                string vendor = match.Groups["vendor"].Value.Trim();
+                dict[prefix] = vendor;
+            }
+            return dict;
+        }
+
+        private Dictionary<string, string> LoadOuiDatabaseFromFile(string path)
+        {
+            var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var content = System.IO.File.ReadAllText(path);
+            var regex = new Regex(@"^(?<prefix>[0-9A-F]{6})\s+\(base 16\)\s+(?<vendor>.+)$", RegexOptions.Multiline);
+
+            foreach (Match match in regex.Matches(content))
+            {
+                string prefix = match.Groups["prefix"].Value.ToUpper();
+                prefix = $"{prefix.Substring(0,2)}-{prefix.Substring(2,2)}-{prefix.Substring(4,2)}";
+                string vendor = match.Groups["vendor"].Value.Trim();
+                dict[prefix] = vendor;
+            }
+            return dict;
         }
 
         private string GetManufacturer(string mac)
@@ -125,8 +173,18 @@ namespace ConnTracer.Services.Network
             if (string.IsNullOrEmpty(mac) || mac == "Unbekannt" || mac.Length < 8)
                 return "Unbekannt";
 
-            string prefix = mac.Substring(0, 8).Replace(':', '-');
+            // MAC-Präfix auf einheitliches Format bringen (Bindestriche, Großbuchstaben, 3 Blöcke)
+            string prefix = mac.Substring(0, 8).Replace(':', '-').ToUpper();
+
+            System.Diagnostics.Debug.WriteLine($"MAC: {mac}, Prefix: {prefix}");
+
+            // Falls das Präfix z.B. "F4-5C-89" ist, aber mac "F4-5C-89-12-34-56", dann stimmt das Format
             if (ouiDatabase.TryGetValue(prefix, out var manufacturer))
+                return manufacturer;
+
+            // Alternativ: Versuche die ersten 8 Zeichen mit nur Bindestrichen
+            prefix = string.Join("-", mac.Split('-', ':').Take(3));
+            if (ouiDatabase.TryGetValue(prefix, out manufacturer))
                 return manufacturer;
 
             return "Unbekannt";

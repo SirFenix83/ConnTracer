@@ -7,6 +7,7 @@ using ConnTracer.Services.Network;
 using ConnTracer.Services.Core;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using System.Drawing;
 
 #nullable disable
 
@@ -22,10 +23,11 @@ namespace ConnTracer
         private readonly System.Windows.Forms.Timer networkMonitorTimer;
         private readonly System.Windows.Forms.Timer bandwidthUpdateTimer;
 
-        private int secondsUntilFirstBandwidthData = 5; // Countdown bis erste Bandbreitendaten
         private bool bandwidthMonitorDataReady = false;
         private bool bandwidthAnalyzerDataReady = false;
         private bool bandwidthTesterDataReady = false;
+
+        private DataGridView dgvStatusOverview;
 
         public MainForm()
         {
@@ -37,7 +39,6 @@ namespace ConnTracer
             bandwidthMonitor = new BandwidthMonitor();
             bandwidthTester = new BandwidthTester();
 
-            // DeviceScanner ListView Setup
             lvDeviceScanner.View = View.Details;
             lvDeviceScanner.FullRowSelect = true;
             lvDeviceScanner.Columns.Clear();
@@ -47,7 +48,6 @@ namespace ConnTracer
             lvDeviceScanner.Columns.Add("Manufacturer", 150);
             lvDeviceScanner.Columns.Add("Status", 100);
 
-            // BandwidthOverview ListView Setup
             lvBandwidthOverview.View = View.Details;
             lvBandwidthOverview.FullRowSelect = true;
             lvBandwidthOverview.Columns.Clear();
@@ -55,7 +55,27 @@ namespace ConnTracer
             lvBandwidthOverview.Columns.Add("Schnittstelle / Gerät", 300);
             lvBandwidthOverview.Columns.Add("Wert", 300);
 
-            // Button Events
+            lvTcpConnections.View = View.Details;
+            lvTcpConnections.FullRowSelect = true;
+            lvTcpConnections.Columns.Clear();
+            lvTcpConnections.Columns.Add("Prozess", 200);
+            lvTcpConnections.Columns.Add("Lokale Adresse", 150);
+            lvTcpConnections.Columns.Add("Remote Adresse", 150);
+            lvTcpConnections.Columns.Add("Status", 100);
+
+            lvNetworkMonitor.View = View.Details;
+            lvNetworkMonitor.FullRowSelect = true;
+            lvNetworkMonitor.Columns.Clear();
+            lvNetworkMonitor.Columns.Add("Gerät", 200);
+            lvNetworkMonitor.Columns.Add("IP Adresse", 150);
+            lvNetworkMonitor.Columns.Add("MAC Adresse", 150);
+
+            lvBottleneckAnalysis.View = View.Details;
+            lvBottleneckAnalysis.FullRowSelect = true;
+            lvBottleneckAnalysis.Columns.Clear();
+            lvBottleneckAnalysis.Columns.Add("Kategorie", 200);
+            lvBottleneckAnalysis.Columns.Add("Ergebnis", 600);
+
             btnShowBandwidthOverview.Click += BtnShowBandwidthOverview_Click;
             btnShowTcpConnections.Click += BtnShowTcpConnections_Click;
             btnShowNetworkMonitor.Click += BtnShowNetworkMonitor_Click;
@@ -64,74 +84,96 @@ namespace ConnTracer
             btnSaveLogs.Click += BtnSaveLogs_Click;
             btnTaskManager.Click += BtnTaskManager_Click;
 
-            // Timer für Network Monitor - 5 Sekunden Intervall
-            networkMonitorTimer = new System.Windows.Forms.Timer
-            {
-                Interval = 5_000
-            };
+            networkMonitorTimer = new System.Windows.Forms.Timer { Interval = 5_000 };
             networkMonitorTimer.Tick += NetworkMonitorTimer_Tick;
 
-            // Timer für Bandwidth Monitor Updates - 5 Sekunden Intervall
-            bandwidthUpdateTimer = new System.Windows.Forms.Timer
-            {
-                Interval = 5_000
-            };
+            bandwidthUpdateTimer = new System.Windows.Forms.Timer { Interval = 1_000 }; // 1 Sekunde
             bandwidthUpdateTimer.Tick += BandwidthUpdateTimer_Tick;
 
             bandwidthMonitor.OnBandwidthUpdate += BandwidthMonitor_OnBandwidthUpdate;
 
-            ShowPanel(pnlBandwidthOverview);
-            this.WindowState = FormWindowState.Maximized;
+            bandwidthMonitor.Start();
 
+            dgvStatusOverview = new DataGridView
+            {
+                Location = new System.Drawing.Point(900, 70),
+                Size = new System.Drawing.Size(270, 120),
+                ReadOnly = true,
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                RowHeadersVisible = false,
+                ColumnHeadersVisible = false, // Spaltenüberschriften ausblenden, falls gewünscht
+                ColumnCount = 2,
+                EnableHeadersVisualStyles = false
+            };
+            dgvStatusOverview.Columns[0].Name = "Komponente";
+            dgvStatusOverview.Columns[0].Width = 120;
+            dgvStatusOverview.Columns[1].Name = "Status";
+            dgvStatusOverview.Columns[1].Width = 120;
+            dgvStatusOverview.Rows.Add("Monitor", "Warten...");
+            dgvStatusOverview.Rows.Add("Analyzer", "Warten...");
+            dgvStatusOverview.Rows.Add("Tester", "Warten...");
+            dgvStatusOverview.ClearSelection();
+            dgvStatusOverview.DefaultCellStyle.SelectionBackColor = dgvStatusOverview.DefaultCellStyle.BackColor;
+            dgvStatusOverview.DefaultCellStyle.SelectionForeColor = dgvStatusOverview.DefaultCellStyle.ForeColor;
+            pnlBandwidthOverview.Controls.Add(dgvStatusOverview);
+
+            // Panel und ListView sichtbar machen
+            pnlBandwidthOverview.Visible = true;
+            lvBandwidthOverview.Visible = true;
+
+            // Panel als aktives Panel setzen
+            ShowPanel(pnlBandwidthOverview);
+
+            lblMonitorStatus.Text = "Status: Warten auf erste Daten...";
+            lblAnalyzerStatus.Text = "Status: Warten auf erste Daten...";
+            lblTesterStatus.Text = "Status: Warten auf erste Daten...";
+
+            WindowState = FormWindowState.Maximized;
             bandwidthUpdateTimer.Start();
         }
 
         private async void BandwidthUpdateTimer_Tick(object sender, EventArgs e)
         {
-            if (secondsUntilFirstBandwidthData > 0)
-            {
-                ShowCountdown(secondsUntilFirstBandwidthData);
-                secondsUntilFirstBandwidthData -= 5;
-                return;
-            }
-
-            // Erstes Update für Monitor
+            // BandwidthMonitor Update
             await bandwidthMonitor.MeasureAsync();
             bandwidthMonitorDataReady = true;
-
-            // Dann Analyzer und Tester parallel starten, wenn nicht schon bereit
-            if (!bandwidthAnalyzerDataReady) _ = UpdateBandwidthAnalyzerAsync();
-            if (!bandwidthTesterDataReady) _ = UpdateBandwidthTesterAsync();
-
             UpdateBandwidthMonitorListView();
-        }
 
-        private void ShowCountdown(int secondsLeft)
-        {
-            lvBandwidthOverview.Items.Clear();
-            lvBandwidthOverview.Items.Add(new ListViewItem(new[]
+            if (!bandwidthAnalyzerDataReady)
             {
-                "Info",
-                "Warte auf erste Daten...",
-                $"Noch {secondsLeft} Sekunden"
-            }));
+                await UpdateBandwidthAnalyzerAsync();
+            }
+
+            if (!bandwidthTesterDataReady)
+            {
+                await UpdateBandwidthTesterAsync();
+            }
         }
 
         private void BandwidthMonitor_OnBandwidthUpdate(string analysis)
         {
-            if (lvBandwidthOverview.InvokeRequired)
-            {
-                lvBandwidthOverview.Invoke(new Action(UpdateBandwidthMonitorListView));
-            }
+            Color color = analysis.Contains("Warnung") ? Color.Red :
+                          analysis.Contains("Hohe") ? Color.Orange :
+                          analysis.Contains("Mittlere") ? Color.Yellow : Color.LightGreen;
+            if (dgvStatusOverview.InvokeRequired)
+                dgvStatusOverview.Invoke(() => SetStatus("Monitor", analysis, color));
             else
-            {
+                SetStatus("Monitor", analysis, color);
+
+            if (lblMonitorStatus.InvokeRequired)
+                lblMonitorStatus.Invoke(() => lblMonitorStatus.Text = $"Status: {analysis}");
+            else
+                lblMonitorStatus.Text = $"Status: {analysis}";
+
+            if (lvBandwidthOverview.InvokeRequired)
+                lvBandwidthOverview.Invoke(UpdateBandwidthMonitorListView);
+            else
                 UpdateBandwidthMonitorListView();
-            }
         }
 
         private void UpdateBandwidthMonitorListView()
         {
-            // Alte Monitor-Einträge entfernen
             for (int i = lvBandwidthOverview.Items.Count - 1; i >= 0; i--)
             {
                 if (lvBandwidthOverview.Items[i].SubItems[0].Text == "Monitor")
@@ -163,6 +205,21 @@ namespace ConnTracer
                 var analyzerData = await GetCurrentBandwidthUsageAsync();
                 bandwidthAnalyzerDataReady = true;
 
+                // Status-Label aktualisieren
+                string analysis = bandwidthAnalyzer.DetectBottleneck(analyzerData);
+                Color color = analysis.Contains("Warnung") ? Color.Red :
+                              analysis.Contains("Hohe") ? Color.Orange :
+                              analysis.Contains("Mittlere") ? Color.Yellow : Color.LightGreen;
+                if (dgvStatusOverview.InvokeRequired)
+                    dgvStatusOverview.Invoke(() => SetStatus("Analyzer", analysis, color));
+                else
+                    SetStatus("Analyzer", analysis, color);
+
+                if (lblAnalyzerStatus.InvokeRequired)
+                    lblAnalyzerStatus.Invoke(() => lblAnalyzerStatus.Text = $"Status: {analysis}");
+                else
+                    lblAnalyzerStatus.Text = $"Status: {analysis}";
+
                 foreach (var kvp in analyzerData)
                 {
                     lvBandwidthOverview.Items.Add(new ListViewItem(new[]
@@ -177,6 +234,10 @@ namespace ConnTracer
                 {
                     "Fehler", "Analyzer", ex.Message
                 }));
+                if (lblAnalyzerStatus.InvokeRequired)
+                    lblAnalyzerStatus.Invoke(() => lblAnalyzerStatus.Text = $"Status: Fehler: {ex.Message}");
+                else
+                    lblAnalyzerStatus.Text = $"Status: Fehler: {ex.Message}";
             }
         }
 
@@ -199,19 +260,35 @@ namespace ConnTracer
                     ? $"{results.DownloadResult.SpeedMbps:F2} Mbps"
                     : $"Fehler: {results.DownloadResult.Message}";
 
-                lvBandwidthOverview.Items.Add(new ListViewItem(new[]
-                {
-                    "Tester", "Download", downloadText
-                }));
-
                 string uploadText = results.UploadResult.Success
                     ? $"{results.UploadResult.SpeedMbps:F2} Mbps"
                     : $"Fehler: {results.UploadResult.Message}";
 
                 lvBandwidthOverview.Items.Add(new ListViewItem(new[]
                 {
+                    "Tester", "Download", downloadText
+                }));
+                lvBandwidthOverview.Items.Add(new ListViewItem(new[]
+                {
                     "Tester", "Upload", uploadText
                 }));
+
+                // Status-Label aktualisieren
+                string testerStatus = results.DownloadResult.Success && results.UploadResult.Success
+                    ? "Test erfolgreich."
+                    : $"Fehler: {results.DownloadResult.Message} {results.UploadResult.Message}";
+                Color testerColor = results.DownloadResult.Success && results.UploadResult.Success
+                    ? Color.LightGreen
+                    : Color.Red;
+                if (dgvStatusOverview.InvokeRequired)
+                    dgvStatusOverview.Invoke(() => SetStatus("Tester", testerStatus, testerColor));
+                else
+                    SetStatus("Tester", testerStatus, testerColor);
+
+                if (lblTesterStatus.InvokeRequired)
+                    lblTesterStatus.Invoke(() => lblTesterStatus.Text = $"Status: {testerStatus}");
+                else
+                    lblTesterStatus.Text = $"Status: {testerStatus}";
             }
             catch (Exception ex)
             {
@@ -219,6 +296,10 @@ namespace ConnTracer
                 {
                     "Fehler", "Tester", ex.Message
                 }));
+                if (lblTesterStatus.InvokeRequired)
+                    lblTesterStatus.Invoke(() => lblTesterStatus.Text = $"Status: Fehler: {ex.Message}");
+                else
+                    lblTesterStatus.Text = $"Status: Fehler: {ex.Message}";
             }
         }
 
@@ -234,8 +315,7 @@ namespace ConnTracer
         private void BtnShowBandwidthOverview_Click(object sender, EventArgs e)
         {
             ShowPanel(pnlBandwidthOverview);
-            // Reset Countdown und Ready Flags, um Live-Daten sauber neu zu starten
-            secondsUntilFirstBandwidthData = 5;
+
             bandwidthMonitorDataReady = false;
             bandwidthAnalyzerDataReady = false;
             bandwidthTesterDataReady = false;
@@ -275,6 +355,12 @@ namespace ConnTracer
             });
         }
 
+        private void BtnShowNetworkMonitor_Click(object sender, EventArgs e)
+        {
+            ShowPanel(pnlNetworkMonitor);
+            _ = UpdateNetworkMonitorAsync();
+        }
+
         private void ShowPanel(Panel panelToShow)
         {
             pnlBandwidthOverview.Visible = false;
@@ -296,8 +382,51 @@ namespace ConnTracer
             }
         }
 
-        private void BtnShowTcpConnections_Click(object sender, EventArgs e) => ShowPanel(pnlTcpConnections);
-        private void BtnShowNetworkMonitor_Click(object sender, EventArgs e) => ShowPanel(pnlNetworkMonitor);
+        private void BtnShowTcpConnections_Click(object sender, EventArgs e)
+        {
+            ShowPanel(pnlTcpConnections);
+            _ = UpdateTcpConnectionsAsync();
+        }
+
+        private async Task UpdateTcpConnectionsAsync()
+        {
+            if (lvTcpConnections == null) return;
+
+            lvTcpConnections.BeginInvoke(() =>
+            {
+                lvTcpConnections.Items.Clear();
+            });
+
+            try
+            {
+                var tcpConnections = await networkScanner.GetTcpConnectionsAsync();
+
+                lvTcpConnections.BeginInvoke(() =>
+                {
+                    foreach (var conn in tcpConnections)
+                    {
+                        var item = new ListViewItem(new[]
+                        {
+                            "Unbekannt", // Placeholder for ProcessName
+                            conn.LocalEndPoint,
+                            conn.RemoteEndPoint,
+                            conn.State
+                        });
+                        lvTcpConnections.Items.Add(item);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                lvTcpConnections.BeginInvoke(() =>
+                {
+                    lvTcpConnections.Items.Add(new ListViewItem(new[]
+                    {
+                        "Fehler", "", "", ex.Message
+                    }));
+                });
+            }
+        }
 
         private void BtnShowBottleneckAnalysis_Click(object sender, EventArgs e)
         {
@@ -333,8 +462,7 @@ namespace ConnTracer
         {
             lvDeviceScanner.Items.Clear();
 
-            string subnet = deviceScanner.GetLocalSubnet();
-            var devices = await deviceScanner.ScanLocalNetworkAsync(subnet);
+            var devices = await deviceScanner.ScanLocalNetworkAsync(deviceScanner.GetLocalSubnet());
 
             if (devices.Count == 0)
             {
@@ -342,15 +470,15 @@ namespace ConnTracer
                 return;
             }
 
-            foreach (var device in devices)
+            foreach (var d in devices)
             {
                 var item = new ListViewItem(new[]
                 {
-                    device.Name,
-                    device.IP,
-                    device.MacAddress,
-                    device.Manufacturer,
-                    "Online"
+                    d.Name,
+                    d.IP,
+                    d.MacAddress,
+                    d.Manufacturer,
+                    d.Status
                 });
                 lvDeviceScanner.Items.Add(item);
             }
@@ -360,39 +488,74 @@ namespace ConnTracer
         {
             try
             {
-                using var sfd = new SaveFileDialog
+                string logContent = ExportLogs();
+
+                SaveFileDialog sfd = new SaveFileDialog()
                 {
-                    Title = "Speicherort für Logdatei auswählen",
-                    Filter = "Textdateien (*.txt)|*.txt|Alle Dateien (*.*)|*.*",
-                    FileName = "ConnTracer_Log_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".txt"
+                    Filter = "Textdatei|*.txt",
+                    FileName = $"ConnTracer_Log_{DateTime.Now:yyyyMMdd_HHmmss}.txt",
+                    Title = "Logs speichern"
                 };
 
                 if (sfd.ShowDialog() == DialogResult.OK)
                 {
-                    var sb = new StringBuilder();
-                    foreach (ListViewItem item in lvBandwidthOverview.Items)
-                    {
-                        sb.AppendLine(string.Join("\t", item.SubItems.Cast<ListViewItem.ListViewSubItem>().Select(x => x.Text)));
-                    }
-                    File.WriteAllText(sfd.FileName, sb.ToString());
-                    MessageBox.Show("Logdatei erfolgreich gespeichert.", "Erfolg", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    File.WriteAllText(sfd.FileName, logContent, Encoding.UTF8);
+                    MessageBox.Show("Logs wurden erfolgreich gespeichert.", "Erfolg", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Fehler beim Speichern der Logdatei: " + ex.Message, "Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"Fehler beim Speichern der Logs:\n{ex.Message}", "Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        private string ExportLogs()
+        {
+            StringBuilder sb = new StringBuilder();
+
+            sb.AppendLine("=== TCP Connections ===");
+            foreach (ListViewItem item in lvTcpConnections.Items)
+            {
+                sb.AppendLine(string.Join(" | ", item.SubItems.Cast<ListViewItem.ListViewSubItem>().Select(s => s.Text)));
+            }
+
+            sb.AppendLine("\n=== Network Monitor ===");
+            foreach (ListViewItem item in lvNetworkMonitor.Items)
+            {
+                sb.AppendLine(string.Join(" | ", item.SubItems.Cast<ListViewItem.ListViewSubItem>().Select(s => s.Text)));
+            }
+
+            sb.AppendLine("\n=== Bottleneck Analysis ===");
+            foreach (ListViewItem item in lvBottleneckAnalysis.Items)
+            {
+                sb.AppendLine(string.Join(" | ", item.SubItems.Cast<ListViewItem.ListViewSubItem>().Select(s => s.Text)));
+            }
+
+            return sb.ToString();
         }
 
         private void BtnTaskManager_Click(object sender, EventArgs e)
         {
             try
             {
-                System.Diagnostics.Process.Start("taskmgr");
+                System.Diagnostics.Process.Start("taskmgr.exe");
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Task-Manager konnte nicht gestartet werden: " + ex.Message, "Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"Fehler beim Starten des Task-Managers:\n{ex.Message}", "Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void SetStatus(string component, string status, Color color)
+        {
+            foreach (DataGridViewRow row in dgvStatusOverview.Rows)
+            {
+                if (row.Cells[0].Value?.ToString() == component)
+                {
+                    row.Cells[1].Value = status;
+                    row.Cells[1].Style.BackColor = color;
+                    break;
+                }
             }
         }
     }

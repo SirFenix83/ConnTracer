@@ -55,6 +55,7 @@ namespace ConnTracer.Services.Core
 
         public async Task<List<NetworkDevice>> GetNetworkDataAsync()
         {
+            // Nur eigene aktiven Netzwerk-Interfaces anzeigen (wie vorher)
             return await Task.Run(GetActiveNetworkDevices);
         }
 
@@ -84,6 +85,41 @@ namespace ConnTracer.Services.Core
         private string FormatMacAddress(PhysicalAddress mac)
         {
             return string.Join(":", mac.GetAddressBytes().Select(b => b.ToString("X2")));
+        }
+
+        // Hilfsmethode für ARP-Lookup
+        private string GetMacFromArp(string ipAddress)
+        {
+            try
+            {
+                var p = new System.Diagnostics.Process
+                {
+                    StartInfo = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "arp",
+                        Arguments = "-a " + ipAddress,
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        CreateNoWindow = true
+                    }
+                };
+                p.Start();
+                string output = p.StandardOutput.ReadToEnd();
+                p.WaitForExit();
+
+                var lines = output.Split('\n');
+                foreach (var line in lines)
+                {
+                    if (line.Contains(ipAddress))
+                    {
+                        var parts = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length >= 2)
+                            return parts[1];
+                    }
+                }
+            }
+            catch { }
+            return "";
         }
     }
 }

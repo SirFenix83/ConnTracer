@@ -24,7 +24,6 @@
         private System.Windows.Forms.ListView lvDeviceScanner;
         private System.Windows.Forms.ListView lvBottleneckAnalysis;
 
-        // Neu: Panels für Bandwidth-Tools im Overview-Bereich (Monitor, Analyzer, Tester)
         private System.Windows.Forms.Panel pnlBandwidthMonitor;
         private System.Windows.Forms.Panel pnlBandwidthAnalyzer;
         private System.Windows.Forms.Panel pnlBandwidthTester;
@@ -62,17 +61,17 @@
             this.lvDeviceScanner = new System.Windows.Forms.ListView();
             this.lvBottleneckAnalysis = new System.Windows.Forms.ListView();
 
-            // Neu: Panels für die 3 Bandwidth Tools im Overview-Bereich
+            // Bandwidth Tool Panels
             this.pnlBandwidthMonitor = new System.Windows.Forms.Panel();
             this.pnlBandwidthAnalyzer = new System.Windows.Forms.Panel();
             this.pnlBandwidthTester = new System.Windows.Forms.Panel();
 
-            // Neu: Status Labels für jedes Bandwidth Tool
+            // Status Labels
             this.lblMonitorStatus = new System.Windows.Forms.Label();
             this.lblAnalyzerStatus = new System.Windows.Forms.Label();
             this.lblTesterStatus = new System.Windows.Forms.Label();
 
-            // Timer für Status-Updates
+            // Timer
             this.timerBandwidthStatus = new System.Windows.Forms.Timer(this.components);
 
             // Form settings
@@ -110,33 +109,30 @@
             this.btnTaskManager.Size = new System.Drawing.Size(150, 35);
             this.btnTaskManager.Text = "Open Task Manager";
 
-            // Hauptpanels mit ListViews (übersichtliche Darstellung)
+            // Hauptpanels mit ListViews
             SetupPanel(pnlTcpConnections, lvTcpConnections, new[] { "Kategorie", "Details", "Wert" }, new[] { 200, 500, 400 });
             SetupPanel(pnlNetworkMonitor, lvNetworkMonitor, new[] { "Name", "IP-Adresse", "MAC-Adresse" }, new[] { 300, 300, 400 });
             SetupPanel(pnlBottleneckAnalysis, lvBottleneckAnalysis, new[] { "Check", "Ergebnis" }, new[] { 300, 700 });
             SetupPanel(pnlDeviceScanner, lvDeviceScanner, new[] { "Device Name", "IP Address", "MAC Address", "Manufacturer", "Status" }, new[] { 150, 120, 150, 150, 100 });
 
-            // Bandwidth Overview Panel (enthält drei Subpanels getrennt)
+            // Bandwidth Overview Panel und Subpanels
             this.pnlBandwidthOverview.Location = new System.Drawing.Point(10, 60);
             this.pnlBandwidthOverview.Size = new System.Drawing.Size(1170, 580);
             this.pnlBandwidthOverview.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
 
-            // Setup Subpanels für Monitor, Analyzer, Tester
             SetupSubBandwidthPanel(pnlBandwidthMonitor, "Bandwidth Monitor", new System.Drawing.Point(10, 10));
             SetupSubBandwidthPanel(pnlBandwidthAnalyzer, "Bandwidth Analyzer", new System.Drawing.Point(10, 200));
             SetupSubBandwidthPanel(pnlBandwidthTester, "Bandwidth Tester", new System.Drawing.Point(10, 390));
 
-            // Status Labels positionieren (innerhalb der Subpanels)
             SetupStatusLabel(lblMonitorStatus, pnlBandwidthMonitor);
             SetupStatusLabel(lblAnalyzerStatus, pnlBandwidthAnalyzer);
             SetupStatusLabel(lblTesterStatus, pnlBandwidthTester);
 
-            // Timer initialisieren (Interval z.B. 1 Sekunde)
+            // Timer Setup
             this.timerBandwidthStatus.Interval = 1000;
             this.timerBandwidthStatus.Enabled = true;
-            // Eventhandler muss in MainForm.cs definiert sein (z.B. timerBandwidthStatus_Tick)
 
-            // Add Controls
+            // Controls hinzufügen
             this.Controls.Add(this.btnShowBandwidthOverview);
             this.Controls.Add(this.btnShowTcpConnections);
             this.Controls.Add(this.btnShowNetworkMonitor);
@@ -151,7 +147,6 @@
             this.Controls.Add(this.pnlBottleneckAnalysis);
             this.Controls.Add(this.pnlDeviceScanner);
 
-            // Add Subpanels to BandwidthOverview panel
             this.pnlBandwidthOverview.Controls.Add(pnlBandwidthMonitor);
             this.pnlBandwidthOverview.Controls.Add(pnlBandwidthAnalyzer);
             this.pnlBandwidthOverview.Controls.Add(pnlBandwidthTester);
