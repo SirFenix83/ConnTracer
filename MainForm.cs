@@ -5,6 +5,7 @@ using System.Text;
 using System.Windows.Forms;
 using ConnTracer.Services.Network;
 using ConnTracer.Services.Core;
+using ConnTracer.Services.Security; // Hinzufügen der fehlenden using-Direktive
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Drawing;
@@ -29,15 +30,41 @@ namespace ConnTracer
 
         private DataGridView dgvStatusOverview;
 
+        // Definition von mainPanel hinzufügen
+        private Panel mainPanel;
+
+        // Neue Monitore
+        private UDPMonitor udpMonitor;
+        private ICMPMonitor icmpMonitor;
+        private PortscanDetector portscanDetector;
+        private TrafficAnomalyDetector trafficAnomalyDetector;
+
+        // Panels und ListViews für die neuen Monitore
+        private Panel pnlSecurityOverview;
+        private ListView lvSecurityOverview;
+
         public MainForm()
         {
             InitializeComponent();
+
+            // Initialisierung von mainPanel
+            mainPanel = new Panel
+            {
+                Dock = DockStyle.Fill
+            };
+            this.Controls.Add(mainPanel);
 
             deviceScanner = new DeviceScanner();
             networkScanner = new NetworkScanner();
             bandwidthAnalyzer = new BandwidthAnalyzer();
             bandwidthMonitor = new BandwidthMonitor();
             bandwidthTester = new BandwidthTester();
+
+            // Monitore initialisieren
+            udpMonitor = new UDPMonitor();
+            icmpMonitor = new ICMPMonitor();
+            portscanDetector = new PortscanDetector();
+            trafficAnomalyDetector = new TrafficAnomalyDetector();
 
             lvDeviceScanner.View = View.Details;
             lvDeviceScanner.FullRowSelect = true;
@@ -75,6 +102,19 @@ namespace ConnTracer
             lvBottleneckAnalysis.Columns.Clear();
             lvBottleneckAnalysis.Columns.Add("Kategorie", 200);
             lvBottleneckAnalysis.Columns.Add("Ergebnis", 600);
+
+            // Panel und ListView für Security-Events
+            pnlSecurityOverview = new Panel { Dock = DockStyle.Fill };
+            lvSecurityOverview = new ListView
+            {
+                Dock = DockStyle.Fill,
+                View = View.Details,
+                FullRowSelect = true
+            };
+            lvSecurityOverview.Columns.Add("Zeit", 140);
+            lvSecurityOverview.Columns.Add("Typ", 120);
+            lvSecurityOverview.Columns.Add("Beschreibung", 600);
+            pnlSecurityOverview.Controls.Add(lvSecurityOverview);
 
             btnShowBandwidthOverview.Click += BtnShowBandwidthOverview_Click;
             btnShowTcpConnections.Click += BtnShowTcpConnections_Click;
@@ -129,8 +169,108 @@ namespace ConnTracer
             lblAnalyzerStatus.Text = "Status: Warten auf erste Daten...";
             lblTesterStatus.Text = "Status: Warten auf erste Daten...";
 
+            // Automatische Größenanpassung aktivieren
+            this.MinimumSize = new Size(800, 600); // Optional: Mindestgröße setzen
+
+            // Panels und Controls ggf. in ein Layout-Panel einfügen
+            // TableLayoutPanel für die Hauptstruktur (nur 1 Buttonreihe oben, 1 unten, Ausgabe dazwischen)
+            TableLayoutPanel mainLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                RowCount = 3,
+                ColumnCount = 1
+            };
+            mainLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));         // Obere Buttonzeile
+            mainLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));    // Ausgabe-Bereich
+            mainLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));         // Untere Buttonzeile
+
+            // Obere Buttonzeile (nur 1 Zeile!)
+            FlowLayoutPanel buttonPanelTop = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = true
+            };
+            buttonPanelTop.Controls.Add(btnShowDeviceScanner);
+            buttonPanelTop.Controls.Add(btnShowBandwidthOverview);
+            buttonPanelTop.Controls.Add(btnShowTcpConnections);
+            buttonPanelTop.Controls.Add(btnShowNetworkMonitor);
+            buttonPanelTop.Controls.Add(btnShowBottleneckAnalysis);
+
+            // Button für Security-Events
+            var btnShowSecurityOverview = new Button
+            {
+                Text = "Security-Events",
+                AutoSize = true
+            };
+            btnShowSecurityOverview.Click += BtnShowSecurityOverview_Click;
+            buttonPanelTop.Controls.Add(btnShowSecurityOverview);
+
+            // Ausgabe-Bereich (Panel für alle Ausgabepanels)
+            Panel outputPanel = new Panel
+            {
+                Dock = DockStyle.Fill
+            };
+            outputPanel.Controls.Add(pnlBandwidthOverview);
+            outputPanel.Controls.Add(pnlTcpConnections);
+            outputPanel.Controls.Add(pnlNetworkMonitor);
+            outputPanel.Controls.Add(pnlBottleneckAnalysis);
+            outputPanel.Controls.Add(pnlDeviceScanner);
+            outputPanel.Controls.Add(pnlSecurityOverview);
+
+            // Untere Buttonzeile (Save Logs & Task Manager)
+            FlowLayoutPanel buttonPanelBottom = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = true
+            };
+            buttonPanelBottom.Controls.Add(btnSaveLogs);
+            buttonPanelBottom.Controls.Add(btnTaskManager);
+
+            // Panels docken
+            pnlBandwidthOverview.Dock = DockStyle.Fill;
+            pnlTcpConnections.Dock = DockStyle.Fill;
+            pnlNetworkMonitor.Dock = DockStyle.Fill;
+            pnlBottleneckAnalysis.Dock = DockStyle.Fill;
+            pnlDeviceScanner.Dock = DockStyle.Fill;
+            pnlSecurityOverview.Dock = DockStyle.Fill;
+
+            // Zusammenbau ins TableLayoutPanel
+            mainLayout.Controls.Add(buttonPanelTop, 0, 0);
+            mainLayout.Controls.Add(outputPanel, 0, 1);
+            mainLayout.Controls.Add(buttonPanelBottom, 0, 2);
+
+            // mainPanel aufräumen und neues Layout einfügen
+            mainPanel.Controls.Clear();
+            mainPanel.Controls.Add(mainLayout);
+
+            // Optional: Padding setzen
+            mainPanel.Padding = new Padding(0, 10, 0, 0); // 10 Pixel Abstand nach oben
+
+            // Fenster nicht maximiert starten
+            this.WindowState = FormWindowState.Normal;
+
             WindowState = FormWindowState.Maximized;
             bandwidthUpdateTimer.Start();
+
+            // Event-Handler für Monitore
+            udpMonitor.UdpPacketDetected += (s, e) =>
+                AddSecurityEvent("UDP", e.Timestamp, e.Description);
+            icmpMonitor.IcmpPacketDetected += (s, e) =>
+                AddSecurityEvent("ICMP", e.Timestamp, e.Description);
+            portscanDetector.PortscanDetected += (s, e) =>
+                AddSecurityEvent("Portscan", e.Timestamp, e.Description);
+            trafficAnomalyDetector.AnomalyDetected += (s, e) =>
+                AddSecurityEvent("Anomalie", e.Timestamp, e.Description);
+
+            // Monitore starten (ggf. asynchron)
+            udpMonitor.Start();
+            icmpMonitor.Start();
+            portscanDetector.Start();
+            trafficAnomalyDetector.Start();
         }
 
         private async void BandwidthUpdateTimer_Tick(object sender, EventArgs e)
@@ -368,6 +508,7 @@ namespace ConnTracer
             pnlNetworkMonitor.Visible = false;
             pnlBottleneckAnalysis.Visible = false;
             pnlDeviceScanner.Visible = false;
+            pnlSecurityOverview.Visible = false;
 
             panelToShow.Visible = true;
 
@@ -407,9 +548,9 @@ namespace ConnTracer
                     {
                         var item = new ListViewItem(new[]
                         {
-                            "Unbekannt", // Placeholder for ProcessName
-                            conn.LocalEndPoint,
-                            conn.RemoteEndPoint,
+                            "Unbekannt", // ProcessName is not available in TcpConnection
+                            $"{conn.LocalEndPoint}",
+                            $"{conn.RemoteEndPoint}",
                             conn.State
                         });
                         lvTcpConnections.Items.Add(item);
@@ -531,6 +672,12 @@ namespace ConnTracer
                 sb.AppendLine(string.Join(" | ", item.SubItems.Cast<ListViewItem.ListViewSubItem>().Select(s => s.Text)));
             }
 
+            sb.AppendLine("\n=== Security Events ===");
+            foreach (ListViewItem item in lvSecurityOverview.Items)
+            {
+                sb.AppendLine(string.Join(" | ", item.SubItems.Cast<ListViewItem.ListViewSubItem>().Select(s => s.Text)));
+            }
+
             return sb.ToString();
         }
 
@@ -543,6 +690,34 @@ namespace ConnTracer
             catch (Exception ex)
             {
                 MessageBox.Show($"Fehler beim Starten des Task-Managers:\n{ex.Message}", "Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void BtnShowSecurityOverview_Click(object sender, EventArgs e)
+        {
+            ShowPanel(pnlSecurityOverview);
+        }
+
+        // Beispielhafte Anpassung in AddSecurityEvent, um IPv6-Adressen korrekt darzustellen
+        private void AddSecurityEvent(string typ, DateTime zeit, string beschreibung, string ipAdresse = null)
+        {
+            var values = new List<string>
+            {
+                zeit.ToString("yyyy-MM-dd HH:mm:ss"),
+                typ,
+                beschreibung
+            };
+            if (ipAdresse != null)
+                values.Add(ipAdresse);
+
+            if (lvSecurityOverview.InvokeRequired)
+            {
+                lvSecurityOverview.Invoke(() =>
+                    lvSecurityOverview.Items.Insert(0, new ListViewItem(values.ToArray())));
+            }
+            else
+            {
+                lvSecurityOverview.Items.Insert(0, new ListViewItem(values.ToArray()));
             }
         }
 
